@@ -36,6 +36,7 @@ static struct FormatEntry format_map[] = {
   {V4L2_PIX_FMT_YUYV, 1, GST_VIDEO_FORMAT_YUY2, 8, 422},
   {V4L2_PIX_FMT_SUNXI_TILED_NV12, 1, GST_VIDEO_FORMAT_NV12_32L32, 8, 422},
   {V4L2_PIX_FMT_NV12_4L4, 1, GST_VIDEO_FORMAT_NV12_4L4, 8, 420},
+  {V4L2_PIX_FMT_YUV420M, 3, GST_VIDEO_FORMAT_I420, 8, 420},
   {0,}
 };
 
@@ -85,6 +86,7 @@ extrapolate_stride (const GstVideoFormatInfo * finfo, gint plane, gint stride)
     case GST_VIDEO_FORMAT_NV21:
     case GST_VIDEO_FORMAT_NV24:
     case GST_VIDEO_FORMAT_NV61:
+    case GST_VIDEO_FORMAT_I420:
       estride = (plane == 0 ? 1 : 2) *
           GST_VIDEO_FORMAT_INFO_SCALE_WIDTH (finfo, plane, stride);
       break;
@@ -131,31 +133,21 @@ gst_v4l2_format_to_video_info (struct v4l2_format *fmt, GstVideoInfo * out_info)
   if (!entry)
     return FALSE;
 
-  if (entry->num_planes != 1) {
-    GST_FIXME ("Multi allocation formats are not supported yet");
-    return FALSE;
-  }
-
   if (!gst_video_info_set_format (out_info, entry->gst_fmt,
           pix_mp->width, pix_mp->height))
     return FALSE;
 
-  if (V4L2_TYPE_IS_MULTIPLANAR (fmt->type)) {
-    /* TODO: We don't support multi-allocation yet */
-    g_return_val_if_fail (pix_mp->num_planes == 1, FALSE);
-    out_info->size = pix_mp->plane_fmt[0].sizeimage;
-  } else {
-    out_info->size = pix->sizeimage;
-  }
-
   for (plane = 0; plane < GST_VIDEO_INFO_N_PLANES (out_info); plane++) {
     gint stride;
 
-    if (V4L2_TYPE_IS_MULTIPLANAR (fmt->type))
+    if (V4L2_TYPE_IS_MULTIPLANAR (fmt->type)) {
       stride = extrapolate_stride (out_info->finfo, plane,
-          pix_mp->plane_fmt[0].bytesperline);
-    else
+          pix_mp->plane_fmt[plane].bytesperline);
+      out_info->size += pix_mp->plane_fmt[plane].sizeimage;
+    } else {
       stride = extrapolate_stride (out_info->finfo, plane, pix->bytesperline);
+      out_info->size += pix->sizeimage;
+    }
 
     set_stride (out_info, plane, stride);
     out_info->offset[plane] = offset;
