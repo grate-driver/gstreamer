@@ -68,6 +68,7 @@ struct _GstV4l2CodecH264Dec
   guint chroma_format_idc;
   guint num_slices;
   gboolean first_slice;
+  guint frame_flags;
 
   GstV4l2CodecAllocator *sink_allocator;
   GstV4l2CodecAllocator *src_allocator;
@@ -981,6 +982,7 @@ gst_v4l2_codec_h264_dec_start_picture (GstH264Decoder * decoder,
       dpb);
 
   self->first_slice = TRUE;
+  self->frame_flags = 0;
 
   return GST_FLOW_OK;
 }
@@ -1288,6 +1290,20 @@ gst_v4l2_codec_h264_dec_decode_slice (GstH264Decoder * decoder,
       slice->nalu.size);
   self->bitstream_map.size += nal_size;
 
+  switch (slice->header.type % 5) {
+    case GST_H264_P_SLICE:
+      self->frame_flags |= V4L2_BUF_FLAG_PFRAME;
+      break;
+
+    case GST_H264_B_SLICE:
+      self->frame_flags |= V4L2_BUF_FLAG_BFRAME;
+      break;
+
+    case GST_H264_I_SLICE:
+      self->frame_flags |= V4L2_BUF_FLAG_KEYFRAME;
+      break;
+  }
+
   return GST_FLOW_OK;
 }
 
@@ -1296,11 +1312,11 @@ gst_v4l2_codec_h264_dec_end_picture (GstH264Decoder * decoder,
     GstH264Picture * picture)
 {
   GstV4l2CodecH264Dec *self = GST_V4L2_CODEC_H264_DEC (decoder);
-  guint flags = 0;
+  guint flags = self->frame_flags;
 
   /* Hold on the output frame if this is first field of a pair */
   if (picture->field != GST_H264_PICTURE_FIELD_FRAME && !picture->second_field)
-    flags = V4L2_BUF_FLAG_M2M_HOLD_CAPTURE_BUF;
+    flags |= V4L2_BUF_FLAG_M2M_HOLD_CAPTURE_BUF;
 
   if (!gst_v4l2_codec_h264_dec_submit_bitstream (self, picture, flags))
     return GST_FLOW_ERROR;
