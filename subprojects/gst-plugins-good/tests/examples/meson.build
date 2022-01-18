@@ -1,5 +1,4 @@
 subdir('audiofx')
-subdir('cairo')
 subdir('level')
 subdir('qt')
 
